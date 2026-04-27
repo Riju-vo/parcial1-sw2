@@ -7,8 +7,10 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 from extensions import db
 from models import Proyecto, Coleccion, Resultado
+import json
 
 projects_bp = Blueprint('projects', __name__, url_prefix='/proyectos')
+
 
 
 @projects_bp.route('/')
@@ -109,6 +111,92 @@ def coleccion_detalle(id_proyecto, id_coleccion):
                            coleccion=coleccion,
                            resultados=resultados,
                            resultados_anteriores=resultados_anteriores)
+
+
+@projects_bp.route('/<int:id_proyecto>/dashboard')
+@login_required
+def dashboard(id_proyecto):
+    """Dashboard visual: graficas de evolucion del proyecto."""
+    proyecto = Proyecto.query.get_or_404(id_proyecto)
+    if proyecto.id_user != current_user.id_user:
+        abort(403)
+
+    colecciones = Coleccion.query\
+        .filter_by(id_proyecto=id_proyecto)\
+        .order_by(Coleccion.fecha_escaneo.asc())\
+        .all()
+
+    # ── Series para grafica de barras apiladas (cronologico) ──
+    fechas_etiquetas = [c.fecha_escaneo.strftime('%d/%m %H:%M') for c in colecciones]
+    serie_critico, serie_alto, serie_medio, serie_bajo = [], [], [], []
+    for col in colecciones:
+        c = col.conteo_por_riesgo
+        serie_critico.append(c['Crítico'])
+        serie_alto.append(c['Alto'])
+        serie_medio.append(c['Medio'])
+        serie_bajo.append(c['Bajo'])
+
+    # ── Totales globales para dona ──
+    totales = {'Crítico': sum(serie_critico), 'Alto': sum(serie_alto),
+               'Medio': sum(serie_medio), 'Bajo': sum(serie_bajo)}
+
+    # ── Tabla de vulnerabilidades con tendencia ──
+    # Recopilar todos los nombres de vulnerabilidades que aparecen en algun escaneo
+    todos_nombres = set()
+    for col in colecciones:
+        for r in col.resultados:
+            todos_nombres.add(r.vulnerabilidad)
+
+    ORDER = ['Bajo', 'Medio', 'Alto', 'Crítico']
+    tabla_vulnerabilidades = []
+    for nombre in sorted(todos_nombres):
+        # Recopilar resultados de cada escaneo para esta vulnerabilidad
+        historial_vuln = []  # lista de (nivel_riesgo, estado) por coleccion
+        for col in colecciones:
+            encontrado = next((r for r in col.resultados if r.vulnerabilidad == nombre), None)
+            historial_vuln.append(encontrado)
+
+        ultimo = next((h for h in reversed(historial_vuln) if h is not None), None)
+        penultimo_list = [h for h in historial_vuln if h is not None]
+        penultimo = penultimo_list[-2] if len(penultimo_list) >= 2 else None
+
+        ocurrencias = sum(1 for h in historial_vuln if h is not None)
+
+        # Calcular tendencia comparando ultimo vs penultimo escaneo
+        tendencia = None
+        if ultimo and penultimo and ultimo.nivel_riesgo in ORDER and penultimo.nivel_riesgo in ORDER:
+            idx_ultimo = ORDER.index(ultimo.nivel_riesgo)
+            idx_penult = ORDER.index(penultimo.nivel_riesgo)
+            if idx_ultimo > idx_penult:
+                tendencia = 'empeora'
+            elif idx_ultimo < idx_penult:
+                tendencia = 'mejora'
+            else:
+                tendencia = 'estable'
+
+        tabla_vulnerabilidades.append({
+            'nombre': nombre,
+            'nivel_actual': ultimo.nivel_riesgo if ultimo else None,
+            'estado': ultimo.estado if ultimo else '—',
+            'ocurrencias': ocurrencias,
+            'tendencia': tendencia,
+        })
+
+    tabla_vulnerabilidades.sort(
+        key=lambda v: ORDER.index(v['nivel_actual']) if v['nivel_actual'] in ORDER else -1,
+        reverse=True
+    )
+
+    return render_template('projects/dashboard.html',
+                           proyecto=proyecto,
+                           colecciones=colecciones,
+                           fechas_etiquetas=fechas_etiquetas,
+                           serie_critico=serie_critico,
+                           serie_alto=serie_alto,
+                           serie_medio=serie_medio,
+                           serie_bajo=serie_bajo,
+                           totales=totales,
+                           tabla_vulnerabilidades=tabla_vulnerabilidades)
 
 
 @projects_bp.route('/<int:id_proyecto>/eliminar', methods=['POST'])
