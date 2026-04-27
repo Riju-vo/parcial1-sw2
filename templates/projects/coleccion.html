@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Escaneo {{ coleccion.fecha_escaneo.strftime('%d/%m/%Y') }} · {{ proyecto.nombre }}{% endblock %}
+{% block hero_title %}Detalle del Escaneo{% endblock %}
+{% block hero_subtitle %}{{ proyecto.nombre }} — {{ coleccion.fecha_escaneo.strftime('%d de %B de %Y, %H:%M') }}{%
+endblock %}
+
+{% block content %}
+<section class="my-4">
+
+    <!-- Navegación -->
+    <div class="d-flex align-items-center gap-2 mb-4">
+        <a href="{{ url_for('projects.detalle', id_proyecto=proyecto.id_proyecto) }}"
+            class="btn btn-outline-secondary rounded-pill btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Historial del proyecto
+        </a>
+    </div>
+
+    <!-- Resumen de riesgo -->
+    {% set conteo = coleccion.conteo_por_riesgo %}
+    {% set total = conteo['Crítico'] + conteo['Alto'] + conteo['Medio'] + conteo['Bajo'] %}
+    <div class="row g-3 mb-4">
+        {% for nivel, color, bg, icon in [
+        ('Crítico', '#ef4444', '#ef444415', 'fa-skull-crossbones'),
+        ('Alto', '#f97316', '#f9731615', 'fa-exclamation-triangle'),
+        ('Medio', '#eab308', '#eab30815', 'fa-exclamation-circle'),
+        ('Bajo', '#22c55e', '#22c55e15', 'fa-check-circle')
+        ] %}
+        <div class="col-6 col-md-3" data-animate data-animate-delay="{{ loop.index0 * 80 }}">
+            <div class="aurora-card p-3 text-center h-100" style="border-top: 3px solid {{ color }};">
+                <i class="fas {{ icon }} fa-lg mb-2" style="color:{{ color }};"></i>
+                <div class="display-6 fw-bold" style="color:{{ color }};">{{ conteo[nivel] }}</div>
+                <div class="text-muted small">{{ nivel }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Tabla de resultados -->
+    <div class="aurora-card p-0 overflow-hidden" data-animate data-animate-delay="320">
+        <div class="px-4 py-3" style="border-bottom:1px solid rgba(0,0,0,.07);">
+            <h3 class="h6 fw-bold mb-0">
+                <i class="fas fa-list-check me-2" style="color:#5B8CFF;"></i>
+                Resultados del escaneo · {{ total }} vulnerabilidades analizadas
+            </h3>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead style="background:rgba(91,140,255,.06);">
+                    <tr>
+                        <th class="ps-4">Vulnerabilidad</th>
+                        <th>Estado</th>
+                        <th class="text-center">Nivel de riesgo</th>
+                        {% if resultados_anteriores %}
+                        <th class="text-center">vs. anterior</th>
+                        {% endif %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in resultados %}
+                    {% set riesgo_color = {
+                    'Crítico': '#ef4444', 'Alto': '#f97316',
+                    'Medio': '#eab308', 'Bajo': '#22c55e'
+                    }.get(r.nivel_riesgo, '#888') %}
+                    <tr style="border-left: 3px solid {{ riesgo_color }};">
+                        <td class="ps-4 fw-semibold">{{ r.vulnerabilidad }}</td>
+                        <td>
+                            {% if 'Vulnerable' in r.estado or 'Missing' in r.estado or 'Issues' in r.estado %}
+                            <span class="badge" style="background:#ef444422;color:#ef4444;">
+                                <i class="fas fa-times-circle me-1"></i>{{ r.estado }}
+                            </span>
+                            {% elif 'Safe' in r.estado or 'Secure' in r.estado or 'Present' in r.estado %}
+                            <span class="badge" style="background:#22c55e22;color:#16a34a;">
+                                <i class="fas fa-check-circle me-1"></i>{{ r.estado }}
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary-subtle text-secondary">{{ r.estado }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge rounded-pill fw-semibold px-3"
+                                style="background:{{ riesgo_color }}22;color:{{ riesgo_color }};">
+                                {{ r.nivel_riesgo or '—' }}
+                            </span>
+                        </td>
+                        {% if resultados_anteriores %}
+                        <td class="text-center">
+                            {% set prev = resultados_anteriores.get(r.vulnerabilidad) %}
+                            {% if not prev %}
+                            <span class="text-muted small">Nuevo</span>
+                            {% elif prev == r.nivel_riesgo %}
+                            <span class="text-muted" title="Sin cambio">— igual</span>
+                            {% else %}
+                            {% set order = ['Bajo', 'Medio', 'Alto', 'Crítico'] %}
+                            {% if order.index(r.nivel_riesgo) > order.index(prev) %}
+                            <span style="color:#ef4444;" title="Empeoró (era {{ prev }})">
+                                <i class="fas fa-arrow-up"></i> {{ prev }}→{{ r.nivel_riesgo }}
+                            </span>
+                            {% else %}
+                            <span style="color:#22c55e;" title="Mejoró (era {{ prev }})">
+                                <i class="fas fa-arrow-down"></i> {{ prev }}→{{ r.nivel_riesgo }}
+                            </span>
+                            {% endif %}
+                            {% endif %}
+                        </td>
+                        {% endif %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</section>
+{% endblock %}

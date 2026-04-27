@@ -1,51 +1,165 @@
 {% extends "base.html" %}
 {% block title %}{{ proyecto.nombre }} · VulnScanner{% endblock %}
 {% block hero_title %}{{ proyecto.nombre }}{% endblock %}
-{% block hero_subtitle %}Detalle del proyecto — colecciones y resultados (Fase 2){% endblock %}
+{% block hero_subtitle %}Historial de escaneos y evolución de vulnerabilidades{% endblock %}
 
 {% block content %}
-<section class="my-4" data-animate data-animate-delay="0">
+<section class="my-4">
 
-    <div class="d-flex align-items-center justify-content-between mb-4">
+    <!-- Encabezado: info del proyecto + acciones -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
         <a href="{{ url_for('projects.index') }}" class="btn btn-outline-secondary rounded-pill btn-sm">
             <i class="fas fa-arrow-left me-1"></i> Mis proyectos
         </a>
-        <form action="{{ url_for('projects.eliminar', id_proyecto=proyecto.id_proyecto) }}" method="post"
-            onsubmit="return confirm('¿Eliminar este proyecto?')">
-            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill">
-                <i class="fas fa-trash me-1"></i> Eliminar proyecto
-            </button>
-        </form>
+        <div class="d-flex gap-2">
+            {% if proyecto.url %}
+            <a href="{{ url_for('home', url=proyecto.url, id_proyecto=proyecto.id_proyecto) }}"
+                class="btn btn-gradient rounded-pill">
+                <i class="fas fa-play me-2"></i>Escanear ahora
+            </a>
+            {% endif %}
+            <form action="{{ url_for('projects.eliminar', id_proyecto=proyecto.id_proyecto) }}" method="post"
+                onsubmit="return confirm('¿Eliminar este proyecto y todo su historial?')">
+                <button type="submit" class="btn btn-outline-danger rounded-pill btn-sm">
+                    <i class="fas fa-trash me-1"></i>Eliminar
+                </button>
+            </form>
+        </div>
     </div>
 
-    <div class="aurora-card p-4 mb-4">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}{% for cat, msg in messages %}
+    <div class="alert alert-{{ cat }} alert-dismissible fade show" role="alert">
+        {{ msg }}<button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endfor %}{% endif %}
+    {% endwith %}
+
+    <!-- Info del proyecto -->
+    <div class="aurora-card p-4 mb-4" data-animate data-animate-delay="0">
         <div class="row g-3">
-            <div class="col-md-6">
+            <div class="col-md-4">
                 <p class="text-muted small mb-1">Nombre</p>
                 <p class="fw-bold fs-5 mb-0">{{ proyecto.nombre }}</p>
             </div>
-            <div class="col-md-6">
-                <p class="text-muted small mb-1">Fecha de creación</p>
+            <div class="col-md-4">
+                <p class="text-muted small mb-1">URL del proyecto</p>
+                {% if proyecto.url %}
+                <a href="{{ proyecto.url }}" target="_blank" class="text-break fw-semibold" style="color:#5B8CFF;">
+                    <i class="fas fa-external-link-alt me-1"></i>{{ proyecto.url }}
+                </a>
+                {% else %}
+                <span class="text-muted fst-italic">Sin URL configurada</span>
+                {% endif %}
+            </div>
+            <div class="col-md-4">
+                <p class="text-muted small mb-1">Creado el</p>
                 <p class="fw-semibold mb-0">
                     <i class="fas fa-calendar-alt me-1 text-primary"></i>
-                    {{ proyecto.fecha_creacion.strftime('%d de %B de %Y, %H:%M') }}
+                    {{ proyecto.fecha_creacion.strftime('%d/%m/%Y %H:%M') }}
                 </p>
             </div>
         </div>
     </div>
 
-    <!-- Placeholder Fase 2 -->
-    <div class="aurora-card p-5 text-center" data-animate data-animate-delay="80">
-        <i class="fas fa-layer-group fa-3x text-muted mb-3"></i>
-        <h4 class="fw-bold">Colecciones de URLs</h4>
-        <p class="text-muted mb-3">
-            En la <strong>Fase 2</strong> podrás añadir colecciones de URLs a este proyecto
-            y ver el historial de escaneos con su evolución en el tiempo.
-        </p>
-        <span class="badge rounded-pill py-2 px-3"
-            style="background:linear-gradient(135deg,#5B8CFF,#8B5CF6);font-size:.9rem;">
-            <i class="fas fa-clock me-1"></i> Próximamente
+    <!-- Historial de escaneos -->
+    <div class="d-flex align-items-center justify-content-between mb-3">
+        <h3 class="h5 fw-bold mb-0">
+            <i class="fas fa-history me-2" style="color:#5B8CFF;"></i>Historial de escaneos
+        </h3>
+        <span class="badge rounded-pill" style="background:#5B8CFF22;color:#5B8CFF;font-size:.85rem;">
+            {{ historial|length }} escaneo{{ 's' if historial|length != 1 else '' }}
         </span>
     </div>
+
+    {% if historial %}
+    <div class="aurora-card p-0 overflow-hidden mb-4" data-animate data-animate-delay="80">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead style="background:rgba(91,140,255,.08);">
+                    <tr>
+                        <th class="ps-4">Fecha del escaneo</th>
+                        <th class="text-center">
+                            <span style="color:#ef4444;">⬤</span> Crítico
+                        </th>
+                        <th class="text-center">
+                            <span style="color:#f97316;">⬤</span> Alto
+                        </th>
+                        <th class="text-center">
+                            <span style="color:#eab308;">⬤</span> Medio
+                        </th>
+                        <th class="text-center">
+                            <span style="color:#22c55e;">⬤</span> Bajo
+                        </th>
+                        <th class="text-center">Total</th>
+                        <th class="pe-4"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in historial %}
+                    {% set c = item.conteo %}
+                    {% set total = c['Crítico'] + c['Alto'] + c['Medio'] + c['Bajo'] %}
+                    <tr>
+                        <td class="ps-4">
+                            <i class="fas fa-clock me-2 text-muted"></i>
+                            {{ item.coleccion.fecha_escaneo.strftime('%d/%m/%Y %H:%M') }}
+                        </td>
+                        <td class="text-center">
+                            {% if c['Crítico'] > 0 %}
+                            <span class="badge rounded-pill" style="background:#ef444422;color:#ef4444;">{{ c['Crítico']
+                                }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if c['Alto'] > 0 %}
+                            <span class="badge rounded-pill" style="background:#f9731622;color:#f97316;">{{ c['Alto']
+                                }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if c['Medio'] > 0 %}
+                            <span class="badge rounded-pill" style="background:#eab30822;color:#b45309;">{{ c['Medio']
+                                }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-center">
+                            {% if c['Bajo'] > 0 %}
+                            <span class="badge rounded-pill" style="background:#22c55e22;color:#16a34a;">{{ c['Bajo']
+                                }}</span>
+                            {% else %}<span class="text-muted">—</span>{% endif %}
+                        </td>
+                        <td class="text-center fw-semibold">{{ total }}</td>
+                        <td class="pe-4 text-end">
+                            <a href="{{ url_for('projects.coleccion_detalle', id_proyecto=proyecto.id_proyecto, id_coleccion=item.coleccion.id_coleccion) }}"
+                                class="btn btn-sm btn-outline-primary rounded-pill">
+                                <i class="fas fa-eye me-1"></i>Ver detalle
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- Sin escaneos todavía -->
+    <div class="aurora-card p-5 text-center" data-animate data-animate-delay="80">
+        <i class="fas fa-radar fa-3x text-muted mb-3"></i>
+        <h4 class="fw-bold">Sin escaneos registrados</h4>
+        <p class="text-muted mb-4">
+            Aún no se han realizado escaneos para este proyecto.
+            {% if proyecto.url %}Haz clic en <strong>Escanear ahora</strong> para empezar.
+            {% else %}Configura una URL en el proyecto para poder escanear.{% endif %}
+        </p>
+        {% if proyecto.url %}
+        <a href="{{ url_for('home', url=proyecto.url, id_proyecto=proyecto.id_proyecto) }}"
+            class="btn btn-gradient rounded-pill btn-lg">
+            <i class="fas fa-play me-2"></i>Primer escaneo
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
 </section>
 {% endblock %}

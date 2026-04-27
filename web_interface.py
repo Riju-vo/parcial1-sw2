@@ -43,7 +43,7 @@ db.init_app(app)
 login_manager.init_app(app)
 
 # ── User loader para Flask-Login ──
-from models import Usuario
+from models import Usuario, Coleccion, Resultado, RISK_MAP
 @login_manager.user_loader
 def load_user(user_id):
     return Usuario.query.get(int(user_id))
@@ -674,7 +674,7 @@ def check_xss_selenium(url):
     return result
 
 # Función principal de escaneo
-def scan(url, session_id):
+def scan(url, session_id, flask_app=None, id_proyecto=None):
     results_queue.put("Iniciando escaneo de vulnerabilidades...")
     results = {}
     
@@ -733,6 +733,30 @@ def scan(url, session_id):
         "report_pdf": pdf_path,
         "correcciones_pdf": corr_pdf_path
     }
+
+    # ── Persistir en BD si el usuario está logueado y hay un proyecto asociado ──
+    if flask_app and id_proyecto:
+        try:
+            with flask_app.app_context():
+                from extensions import db
+                coleccion = Coleccion(id_proyecto=id_proyecto)
+                db.session.add(coleccion)
+                db.session.flush()  # obtener id_coleccion antes de commit
+
+                for vuln_name, (status, risk_en) in results.items():
+                    nivel = RISK_MAP.get(risk_en, 'Bajo')
+                    resultado = Resultado(
+                        vulnerabilidad=vuln_name,
+                        estado=status,
+                        nivel_riesgo=nivel,
+                        id_coleccion=coleccion.id_coleccion
+                    )
+                    db.session.add(resultado)
+
+                db.session.commit()
+                results_queue.put(f"✔ Resultados guardados en la base de datos (colección #{coleccion.id_coleccion}).")
+        except Exception as e:
+            logging.exception("Error al guardar resultados en BD: %s", e)
     
     # Señalar que se completó el escaneo
     results_queue.put("SCAN_COMPLETE")
@@ -749,6 +773,7 @@ def index():
 @app.route('/scan', methods=['POST'])
 def start_scan():
     url = request.form.get('url')
+    id_proyecto = request.form.get('id_proyecto', type=int)  # None si no viene
     if not url:
         flash('Por favor, ingrese una URL válida', 'danger')
         return redirect(url_for('index'))
@@ -757,7 +782,12 @@ def start_scan():
     session_id = str(int(time.time()))
     
     # Iniciar el escaneo en un hilo separado
-    thread = threading.Thread(target=scan, args=(url, session_id))
+    # Pasamos flask_app e id_proyecto para persistir en BD si hay proyecto asociado
+    thread = threading.Thread(
+        target=scan,
+        args=(url, session_id),
+        kwargs={'flask_app': app, 'id_proyecto': id_proyecto}
+    )
     thread.daemon = True
     thread.start()
     
@@ -816,7 +846,10 @@ def download_correcciones(session_id):
 
 @app.route('/index')
 def home():
-    return render_template('index.html')
+    # Acepta ?url=... y ?id_proyecto=... para pre-llenar desde la vista de proyecto
+    prefill_url = request.args.get('url', '')
+    id_proyecto  = request.args.get('id_proyecto', '')
+    return render_template('index.html', prefill_url=prefill_url, id_proyecto=id_proyecto)
 
 
 @app.route('/manual_vul')
