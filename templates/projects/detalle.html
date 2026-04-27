@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}{{ proyecto.nombre }} · VulnScanner{% endblock %}
+{% block hero_title %}{{ proyecto.nombre }}{% endblock %}
+{% block hero_subtitle %}Detalle del proyecto — colecciones y resultados (Fase 2){% endblock %}
+
+{% block content %}
+<section class="my-4" data-animate data-animate-delay="0">
+
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <a href="{{ url_for('projects.index') }}" class="btn btn-outline-secondary rounded-pill btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Mis proyectos
+        </a>
+        <form action="{{ url_for('projects.eliminar', id_proyecto=proyecto.id_proyecto) }}" method="post"
+            onsubmit="return confirm('¿Eliminar este proyecto?')">
+            <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill">
+                <i class="fas fa-trash me-1"></i> Eliminar proyecto
+            </button>
+        </form>
+    </div>
+
+    <div class="aurora-card p-4 mb-4">
+        <div class="row g-3">
+            <div class="col-md-6">
+                <p class="text-muted small mb-1">Nombre</p>
+                <p class="fw-bold fs-5 mb-0">{{ proyecto.nombre }}</p>
+            </div>
+            <div class="col-md-6">
+                <p class="text-muted small mb-1">Fecha de creación</p>
+                <p class="fw-semibold mb-0">
+                    <i class="fas fa-calendar-alt me-1 text-primary"></i>
+                    {{ proyecto.fecha_creacion.strftime('%d de %B de %Y, %H:%M') }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Placeholder Fase 2 -->
+    <div class="aurora-card p-5 text-center" data-animate data-animate-delay="80">
+        <i class="fas fa-layer-group fa-3x text-muted mb-3"></i>
+        <h4 class="fw-bold">Colecciones de URLs</h4>
+        <p class="text-muted mb-3">
+            En la <strong>Fase 2</strong> podrás añadir colecciones de URLs a este proyecto
+            y ver el historial de escaneos con su evolución en el tiempo.
+        </p>
+        <span class="badge rounded-pill py-2 px-3"
+            style="background:linear-gradient(135deg,#5B8CFF,#8B5CF6);font-size:.9rem;">
+            <i class="fas fa-clock me-1"></i> Próximamente
+        </span>
+    </div>
+</section>
+{% endblock %}

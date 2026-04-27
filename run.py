@@ -6,6 +6,7 @@ Este script inicia la interfaz web para el escáner de vulnerabilidades.
 
 import os
 from web_interface import app
+from extensions import db
 
 if __name__ == "__main__":
     # Crear directorios necesarios si no existen
@@ -21,6 +22,11 @@ if __name__ == "__main__":
     if not os.path.exists('static/css/styles.css'):
         print("Error: El archivo 'static/css/styles.css' no existe.")
         exit(1)
+
+    # Crear tablas en la base de datos si no existen
+    with app.app_context():
+        db.create_all()
+        print("\033[92m✔ Tablas de base de datos verificadas/creadas.\033[0m")
         
     print("\n\033[92m----- Escáner de Vulnerabilidades Web -----\033[0m")
     print("\033[94mIniciando la aplicación web...\033[0m")
@@ -28,7 +34,4 @@ if __name__ == "__main__":
     print("\033[93mPara detener la aplicación, presiona Ctrl+C\033[0m\n")
     
     # Iniciar la aplicación Flask
-    # app.run(host='0.0.0.0', port=5000, debug=False)
-
-    # Deployment config
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)

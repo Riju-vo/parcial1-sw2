@@ -21,11 +21,39 @@ import ssl
 import re
 import socket
 from datetime import datetime
-from urllib.parse import urlparse, urljoin  
+from urllib.parse import urlparse, urljoin
+
+# ── Cargar variables de entorno desde .env (desarrollo local) ──
+from dotenv import load_dotenv
+load_dotenv()
 
 #===============================================================================
 app = Flask(__name__)
-app.secret_key = 'vulnerability_scanner_secret_key'
+app.secret_key = os.environ.get('SECRET_KEY', 'vulnerability_scanner_secret_key')
+
+# ── Base de datos (PostgreSQL via SQLAlchemy) ──
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/vulnscanner'
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ── Inicializar extensiones ──
+from extensions import db, login_manager
+db.init_app(app)
+login_manager.init_app(app)
+
+# ── User loader para Flask-Login ──
+from models import Usuario
+@login_manager.user_loader
+def load_user(user_id):
+    return Usuario.query.get(int(user_id))
+
+# ── Registrar Blueprints ──
+from auth import auth_bp
+from projects import projects_bp
+app.register_blueprint(auth_bp)
+app.register_blueprint(projects_bp)
+
 scan_results = {}  # aquí se guardarán los resultados completos por sesión
 
 
@@ -798,7 +826,10 @@ def manual():
 
 
 
+
+
 if __name__ == '__main__':
-    # Obtener el puerto desde la variable de entorno o usar 5000 como predeterminado
+    with app.app_context():
+        db.create_all()  # Crea las tablas si no existen (equivalente rápido a migrate en dev)
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)

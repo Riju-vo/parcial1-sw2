@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Crear Cuenta · VulnScanner{% endblock %}
+{% block hero_title %}Crear Cuenta{% endblock %}
+{% block hero_subtitle %}Regístrate para guardar tus proyectos y escaneos{% endblock %}
+
+{% block alerts %}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+{% for category, message in messages %}
+<div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endfor %}
+{% endif %}
+{% endwith %}
+{% endblock %}
+
+{% block content %}
+<section class="my-4 d-flex justify-content-center" data-animate data-animate-delay="0">
+    <div class="aurora-card p-4 p-md-5" style="width: 100%; max-width: 480px;">
+
+        <div class="text-center mb-4">
+            <div class="hero-icon mx-auto mb-3"
+                style="width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#8B5CF6,#F43F5E);display:grid;place-items:center;">
+                <i class="fas fa-user-plus text-white fa-lg"></i>
+            </div>
+            <h2 class="h4 fw-bold mb-0">Crear nueva cuenta</h2>
+            <p class="text-muted small mt-1">Completa los campos para registrarte</p>
+        </div>
+
+        <form action="{{ url_for('auth.register') }}" method="post" id="registerForm">
+            <div class="mb-3">
+                <label for="username" class="form-label fw-semibold">Nombre de usuario</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-user"></i></span>
+                    <input type="text" class="form-control" id="username" name="username"
+                        placeholder="min. 3 caracteres" required minlength="3" autocomplete="username">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="password" class="form-label fw-semibold">Contraseña</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-key"></i></span>
+                    <input type="password" class="form-control" id="password" name="password"
+                        placeholder="min. 6 caracteres" required minlength="6" autocomplete="new-password">
+                    <button class="btn btn-outline-secondary" type="button" id="togglePwd" tabindex="-1">
+                        <i class="fas fa-eye" id="eyeIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label for="confirm" class="form-label fw-semibold">Confirmar contraseña</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-key"></i></span>
+                    <input type="password" class="form-control" id="confirm" name="confirm"
+                        placeholder="Repite tu contraseña" required autocomplete="new-password">
+                </div>
+                <div class="invalid-feedback" id="confirmError">Las contraseñas no coinciden.</div>
+            </div>
+
+            <button type="submit" class="btn btn-gradient btn-lg w-100 rounded-pill" id="registerBtn">
+                <i class="fas fa-user-plus me-2"></i> Crear cuenta
+            </button>
+        </form>
+
+        <hr class="my-4">
+        <p class="text-center text-muted small mb-0">
+            ¿Ya tienes cuenta?
+            <a href="{{ url_for('auth.login') }}" class="fw-semibold" style="color:#5B8CFF;">Iniciar sesión</a>
+        </p>
+    </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Toggle password visibility
+    document.getElementById('togglePwd').addEventListener('click', () => {
+        const pwd = document.getElementById('password');
+        const eye = document.getElementById('eyeIcon');
+        if (pwd.type === 'password') {
+            pwd.type = 'text'; eye.classList.replace('fa-eye', 'fa-eye-slash');
+        } else {
+            pwd.type = 'password'; eye.classList.replace('fa-eye-slash', 'fa-eye');
+        }
+    });
+
+    // Client-side password match check
+    document.getElementById('registerForm').addEventListener('submit', (e) => {
+        const pwd = document.getElementById('password').value;
+        const conf = document.getElementById('confirm').value;
+        if (pwd !== conf) {
+            e.preventDefault();
+            document.getElementById('confirm').classList.add('is-invalid');
+            document.getElementById('confirmError').style.display = 'block';
+        } else {
+            const btn = document.getElementById('registerBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creando cuenta...';
+        }
+    });
+</script>
+{% endblock %}
