@@ -45,7 +45,45 @@
               <i class="fas fa-book me-1"></i>Manual
             </a>
           </li>
+
+          {% if current_user.is_authenticated %}
+          <li class="nav-item">
+            <a class="nav-link {% if request.blueprint == 'projects' %}active{% endif %}"
+              href="{{ url_for('projects.index') }}">
+              <i class="fas fa-folder me-1"></i>Proyectos
+            </a>
+          </li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle d-flex align-items-center gap-1" href="#" id="userDropdown" role="button"
+              data-bs-toggle="dropdown">
+              <span
+                style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#5B8CFF,#8B5CF6);display:inline-grid;place-items:center;color:#fff;font-size:.75rem;font-weight:700;">
+                {{ current_user.user[0]|upper }}
+              </span>
+              {{ current_user.user }}
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end shadow border-0 rounded-3">
+              <li><span class="dropdown-item-text text-muted small">Conectado como <strong>{{ current_user.user
+                    }}</strong></span></li>
+              <li>
+                <hr class="dropdown-divider">
+              </li>
+              <li>
+                <a class="dropdown-item text-danger" href="{{ url_for('auth.logout') }}">
+                  <i class="fas fa-right-from-bracket me-2"></i>Cerrar sesión
+                </a>
+              </li>
+            </ul>
+          </li>
+          {% else %}
+          <li class="nav-item ms-md-2">
+            <a href="{{ url_for('auth.login') }}" class="btn btn-gradient rounded-pill btn-sm px-3">
+              <i class="fas fa-arrow-right-to-bracket me-1"></i>Iniciar sesión
+            </a>
+          </li>
+          {% endif %}
         </ul>
+
       </div>
     </div>
   </nav>
