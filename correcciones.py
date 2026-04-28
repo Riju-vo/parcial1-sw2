@@ -82,7 +82,7 @@ Responde ÚNICAMENTE con un array JSON válido con esta estructura exacta (sin t
                 "role": "system",
                 "content": (
                     "Eres un experto en ciberseguridad. "
-                    "Respondes SOLO con JSON válido, sin texto adicional, "
+                    "Respondes SOLO con JSON válido, sin texto sadicional, "
                     "sin bloques de código markdown."
                 ),
             },

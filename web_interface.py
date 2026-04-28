@@ -22,6 +22,9 @@ import re
 import socket
 from datetime import datetime
 from urllib.parse import urlparse, urljoin
+import urllib3
+# El escáner necesita conectarse a sitios con certs SSL inválidos para analizarlos
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ── Cargar variables de entorno desde .env (desarrollo local) ──
 from dotenv import load_dotenv
@@ -281,7 +284,7 @@ def check_broken_access_control(url):
     results_queue.put(f"Probando Broken Access Control (A01) en {url}...")
     try:
         # Obtener la página principal
-        res = requests.get(url, timeout=10)
+        res = requests.get(url, timeout=10, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
         links = [a.get('href') for a in soup.find_all('a', href=True)]
         
@@ -303,11 +306,11 @@ def check_broken_access_control(url):
             tampered_url = re.sub(rf'/{original_id}', f'/{int(original_id) + 1}', full_url)
             
             # Hacer requests
-            orig_res = requests.get(full_url, timeout=10)
+            orig_res = requests.get(full_url, timeout=10, verify=False)
             if orig_res.status_code != 200:
                 continue
             
-            tamp_res = requests.get(tampered_url, timeout=10)
+            tamp_res = requests.get(tampered_url, timeout=10, verify=False)
             if tamp_res.status_code == 200 and len(tamp_res.text.strip()) > 0:
                 vulnerable = True
                 break
@@ -448,6 +451,7 @@ def check_sql_injection(url):
         return list(qs.keys())
 
     session = requests.Session()
+    session.verify = False  # permite escanear sitios con certs SSL inválidos
 
     # Asegura esquema
     if not url.startswith(("http://", "https://")):
@@ -567,7 +571,7 @@ def check_xss(url):
     results_queue.put(f"Probando XSS en {url}...")
     payload = "<script>alert(1)</script>"
     try:
-        res = requests.get(f"{url}?q={payload}")
+        res = requests.get(f"{url}?q={payload}", verify=False)
         if payload in res.text:
             result = ("Vulnerable", "High")
         else:
@@ -583,7 +587,7 @@ def check_xss(url):
 def check_clickjacking(url):
     results_queue.put(f"Probando Clickjacking en {url}...")
     try:
-        headers = requests.get(url).headers
+        headers = requests.get(url, verify=False).headers
         if "X-Frame-Options" not in headers:
             result = ("Vulnerable", "Medium")
         else:
@@ -609,7 +613,7 @@ def check_security_headers(url):
         "Permissions-Policy"
     ]
     try:
-        res = requests.get(url)
+        res = requests.get(url, verify=False)
         missing = [h for h in expected_headers if h not in res.headers]
         if missing:
             result = (f"Missing: {', '.join(missing)}", "Medium")
@@ -628,7 +632,7 @@ def check_open_redirect(url):
     results_queue.put(f"Probando Open Redirect en {url}...")
     test_url = url + "/redirect?url=https://evil.com"
     try:
-        res = requests.get(test_url, allow_redirects=False)
+        res = requests.get(test_url, allow_redirects=False, verify=False)
         if "Location" in res.headers and "evil.com" in res.headers["Location"]:
             result = ("Vulnerable", "High")
         else:
@@ -645,7 +649,7 @@ def check_open_redirect(url):
 def check_csrf(url):
     results_queue.put(f"Probando CSRF en {url}...")
     try:
-        res = requests.get(url)
+        res = requests.get(url, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
         forms = soup.find_all('form')
         if forms:
@@ -691,7 +695,7 @@ def check_xss_selenium(url):
             # Fallback para entornos cloud donde ChromeDriverManager podría fallar
             results_queue.put("Fallback: Usando método alternativo para XSS - simulación sin navegador real")
             # Simulamos la prueba sin navegador real para entornos donde Selenium no funciona
-            response = requests.get(url)
+            response = requests.get(url, verify=False)
             if "<script>alert" in response.text:
                 return ("Potencialmente Vulnerable (Simulado)", "Medium")
             return ("No se detectaron XSS simples (Simulado)", "Low")
@@ -736,7 +740,7 @@ def check_xss_selenium(url):
         results_queue.put(f"Error en la prueba con Selenium: {str(e)}")
         # Usar alternativa: comprobación básica si Selenium falla completamente
         try:
-            response = requests.get(url)
+            response = requests.get(url, verify=False)
             if "<script>alert" in response.text:
                 return ("Potencialmente Vulnerable (Alternativo)", "Medium")
             return ("Prueba alternativa: No se detectaron XSS simples", "Low")
@@ -756,7 +760,9 @@ def scan(url, session_id, flask_app=None, id_proyecto=None):
         url = 'http://' + url
     
     try:
-        requests.get(url, timeout=10)
+        # verify=False permite escanear sitios con certificados SSL inválidos/autofirmados
+        # (eso mismo se reportará como vulnerabilidad en check_cryptographic_failures)
+        requests.get(url, timeout=10, verify=False)
     except requests.exceptions.RequestException as e:
         results_queue.put(f"Error: No se puede conectar a {url}: {str(e)}")
         return None

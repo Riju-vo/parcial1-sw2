@@ -30,14 +30,13 @@
       <div class="collapse navbar-collapse" id="mainNav">
         <ul class="navbar-nav ms-auto gap-1 align-items-md-center">
           <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'home' or request.endpoint == 'index' %}active{% endif %}"
-              href="{{ url_for('home') }}">
+            <a class="nav-link {% if request.endpoint == 'index' %}active{% endif %}" href="{{ url_for('index') }}">
               <i class="fas fa-house me-1"></i>Inicio
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link {% if request.endpoint == 'start_scan' or request.endpoint == 'results' %}active{% endif %}"
-              href="{{ url_for('index') }}">
+            <a class="nav-link {% if request.endpoint == 'home' or request.endpoint == 'start_scan' or request.endpoint == 'results' %}active{% endif %}"
+              href="{{ url_for('home') }}">
               <i class="fas fa-search me-1"></i>Escanear
             </a>
           </li>
@@ -121,11 +120,11 @@
           </span>
         </div>
         <div class="col-md-4 text-center">
-          <small class="text-muted">Escáner de Vulnerabilidades Web &copy; 2025</small>
+          <small class="text-muted">Escáner de Vulnerabilidades Web &copy; 2026</small>
         </div>
         <div class="col-md-4 text-center text-md-end d-flex gap-3 justify-content-center justify-content-md-end">
-          <a href="{{ url_for('home') }}">Inicio</a>
-          <a href="{{ url_for('index') }}">Escanear</a>
+          <a href="{{ url_for('index') }}">Inicio</a>
+          <a href="{{ url_for('home') }}">Escanear</a>
           <a href="{{ url_for('manual') }}">Manual</a>
         </div>
       </div>
