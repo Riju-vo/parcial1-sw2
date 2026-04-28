@@ -8,13 +8,20 @@ import os
 from web_interface import app
 from extensions import db
 
+import models  # asegura que los modelos estén registrados antes de create_all
+
+# Crear/verificar tablas al importar el módulo (compatible con Gunicorn y python run.py)
+with app.app_context():
+    db.create_all()
+    print("\033[92m✔ Tablas de base de datos verificadas/creadas.\033[0m")
+
 if __name__ == "__main__":
     # Crear directorios necesarios si no existen
     if not os.path.exists('reports'):
         os.makedirs('reports')
     if not os.path.exists('static/css'):
         os.makedirs('static/css')
-        
+
     # Verificar que los directorios de plantillas y estáticos existen
     if not os.path.exists('templates'):
         print("Error: El directorio 'templates/' no existe.")
@@ -23,11 +30,6 @@ if __name__ == "__main__":
         print("Error: El archivo 'static/css/styles.css' no existe.")
         exit(1)
 
-    # Crear tablas en la base de datos si no existen
-    with app.app_context():
-        db.create_all()
-        print("\033[92m✔ Tablas de base de datos verificadas/creadas.\033[0m")
-        
     print("\n\033[92m----- Escáner de Vulnerabilidades Web -----\033[0m")
     print("\033[94mIniciando la aplicación web...\033[0m")
     print("\033[94mAccede a http://127.0.0.1:5000 en tu navegador\033[0m")

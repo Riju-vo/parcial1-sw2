@@ -104,7 +104,7 @@ class Resultado(db.Model):
 
     id_resultado   = db.Column(db.Integer, primary_key=True)
     vulnerabilidad = db.Column(db.Text, nullable=False)
-    estado         = db.Column(db.String(50), default='Pendiente')
+    estado         = db.Column(db.Text, default='Pendiente')
     nivel_riesgo   = db.Column(db.String(20))  # Bajo, Medio, Alto, Crítico
 
     id_coleccion   = db.Column(db.Integer,
