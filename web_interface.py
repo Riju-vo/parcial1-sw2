@@ -54,6 +54,79 @@ from projects import projects_bp
 app.register_blueprint(auth_bp)
 app.register_blueprint(projects_bp)
 
+
+# ── Chat con IA: endpoint stateless ──────────────────────────────────────────
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    """
+    Recibe el historial de mensajes + el contexto del escaneo.
+    Llama a Azure OpenAI y devuelve la respuesta del asistente.
+
+    Body JSON esperado:
+        {
+            "messages": [{"role": "user", "content": "..."}, ...],
+            "contexto":  "texto con las vulnerabilidades del escaneo"
+        }
+    """
+    from flask import jsonify
+    data = request.get_json(force=True, silent=True) or {}
+    messages_in  = data.get('messages', [])
+    contexto     = data.get('contexto', '')
+
+    # Validar que hay al menos un mensaje de usuario
+    if not messages_in:
+        return jsonify({'error': 'No se enviaron mensajes.'}), 400
+
+    # Obtener configuración de Azure OpenAI
+    endpoint    = os.getenv('AZURE_OPENAI_ENDPOINT', '').rstrip('/')
+    api_key     = os.getenv('AZURE_OPENAI_API_KEY', '')
+    deployment  = os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-4.1-mini')
+    api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-05-01-preview')
+
+    if not endpoint or not api_key:
+        return jsonify({'error': 'Azure OpenAI no está configurado en el servidor.'}), 503
+
+    # System message con el contexto del escaneo inyectado
+    system_msg = {
+        'role': 'system',
+        'content': (
+            'Eres un asistente experto en ciberseguridad. '
+            'El usuario está revisando los resultados de un escaneo de vulnerabilidades. '
+            'Responde de forma clara, concreta y en español. '
+            'Si el usuario pregunta cómo corregir algo, da pasos específicos y ejemplos de código si aplica.\n\n'
+            f'Contexto del escaneo actual:\n{contexto}'
+        )
+    }
+
+    payload = {
+        'messages': [system_msg] + messages_in,
+        'temperature': 0.4,
+        'max_tokens': 1500,
+    }
+
+    url = (
+        f'{endpoint}/openai/deployments/{deployment}'
+        f'/chat/completions?api-version={api_version}'
+    )
+    headers = {'Content-Type': 'application/json', 'api-key': api_key}
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=45)
+        if resp.status_code != 200:
+            return jsonify({'error': f'Error Azure OpenAI {resp.status_code}: {resp.text[:300]}'}), 502
+
+        reply = (
+            resp.json()
+            .get('choices', [{}])[0]
+            .get('message', {})
+            .get('content', '')
+            .strip()
+        )
+        return jsonify({'reply': reply})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 scan_results = {}  # aquí se guardarán los resultados completos por sesión
 
 

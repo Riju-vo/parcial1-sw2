@@ -8,11 +8,19 @@ endblock %}
 <section class="my-4">
 
     <!-- Navegación -->
-    <div class="d-flex align-items-center gap-2 mb-4">
+    <div class="d-flex align-items-center justify-content-between gap-2 mb-4">
         <a href="{{ url_for('projects.detalle', id_proyecto=proyecto.id_proyecto) }}"
             class="btn btn-outline-secondary rounded-pill btn-sm">
             <i class="fas fa-arrow-left me-1"></i> Historial del proyecto
         </a>
+        <!-- Botón para abrir el chat -->
+        <button class="btn btn-gradient rounded-pill"
+                type="button"
+                data-bs-toggle="offcanvas"
+                data-bs-target="#chatIA"
+                aria-controls="chatIA">
+            <i class="fas fa-robot me-2"></i>Preguntar a la IA
+        </button>
     </div>
 
     <!-- Resumen de riesgo -->
@@ -111,4 +119,287 @@ endblock %}
     </div>
 
 </section>
+
+<!-- ═══════════════════════════════════════════════════════════
+     OFFCANVAS: Panel de chat con IA
+═══════════════════════════════════════════════════════════ -->
+<div class="offcanvas offcanvas-end" tabindex="-1" id="chatIA"
+     style="width: min(480px, 100vw);">
+
+    <!-- Header -->
+    <div class="offcanvas-header"
+         style="background: linear-gradient(135deg, #5B8CFF 0%, #a78bfa 100%); color:#fff;">
+        <div class="d-flex align-items-center gap-2">
+            <div style="width:36px;height:36px;background:rgba(255,255,255,.2);border-radius:50%;
+                        display:flex;align-items:center;justify-content:center;">
+                <i class="fas fa-robot"></i>
+            </div>
+            <div>
+                <div class="fw-bold">Asistente de Seguridad</div>
+                <div style="font-size:.75rem;opacity:.85;">
+                    Pregúntame sobre las vulnerabilidades de este escaneo
+                </div>
+            </div>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas"></button>
+    </div>
+
+    <!-- Sugerencias rápidas -->
+    <div class="px-3 pt-3 pb-2"
+         style="border-bottom:1px solid rgba(0,0,0,.07);background:rgba(91,140,255,.04);">
+        <div class="text-muted small mb-2 fw-semibold">Preguntas rápidas:</div>
+        <div class="d-flex flex-wrap gap-2" id="sugerencias">
+            <button class="btn btn-sm rounded-pill sugerencia-btn"
+                    style="border:1px solid #5B8CFF22;font-size:.78rem;"
+                    data-texto="¿Cuál es la vulnerabilidad más crítica y cómo la corrijo?">
+                🔴 Más crítica
+            </button>
+            <button class="btn btn-sm rounded-pill sugerencia-btn"
+                    style="border:1px solid #5B8CFF22;font-size:.78rem;"
+                    data-texto="Dame un plan de acción priorizado para corregir todas las vulnerabilidades.">
+                📋 Plan de acción
+            </button>
+            <button class="btn btn-sm rounded-pill sugerencia-btn"
+                    style="border:1px solid #5B8CFF22;font-size:.78rem;"
+                    data-texto="¿Cuánto tiempo aproximado tomaría corregir todas estas vulnerabilidades?">
+                ⏱️ Tiempo estimado
+            </button>
+            <button class="btn btn-sm rounded-pill sugerencia-btn"
+                    style="border:1px solid #5B8CFF22;font-size:.78rem;"
+                    data-texto="Explícame en términos simples qué riesgo representa este sitio para sus usuarios.">
+                💡 Riesgo en palabras simples
+            </button>
+        </div>
+    </div>
+
+    <!-- Mensajes -->
+    <div class="offcanvas-body d-flex flex-column p-0" style="overflow:hidden;">
+        <div id="chat-mensajes"
+             style="flex:1;overflow-y:auto;padding:1rem;display:flex;flex-direction:column;gap:.75rem;">
+            <!-- Mensaje inicial del bot -->
+            <div class="d-flex gap-2 align-items-start">
+                <div class="bot-avatar">
+                    <i class="fas fa-robot" style="font-size:.8rem;"></i>
+                </div>
+                <div class="chat-bubble-bot">
+                    <strong>¡Hola!</strong> Soy tu asistente de seguridad. Tengo el contexto completo
+                    de este escaneo. Puedes preguntarme cómo corregir vulnerabilidades específicas,
+                    pedir ejemplos de código, o solicitar un plan de acción. ¿En qué te ayudo?
+                </div>
+            </div>
+        </div>
+
+        <!-- Input de chat -->
+        <div class="p-3" style="border-top:1px solid rgba(0,0,0,.08);">
+            <div class="d-flex gap-2">
+                <textarea id="chat-input"
+                          class="form-control"
+                          placeholder="Escribe tu pregunta..."
+                          rows="2"
+                          style="resize:none;border-radius:12px;font-size:.9rem;"
+                          onkeydown="handleChatKey(event)"></textarea>
+                <button id="chat-send-btn"
+                        onclick="enviarMensaje()"
+                        class="btn btn-gradient rounded-pill px-3"
+                        title="Enviar (Enter)">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <div class="text-muted small mt-1" style="font-size:.72rem;">
+                Enter para enviar · Shift+Enter para nueva línea
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.bot-avatar {
+    min-width: 30px; height: 30px;
+    background: linear-gradient(135deg,#5B8CFF,#a78bfa);
+    border-radius: 50%; display:flex; align-items:center;
+    justify-content:center; color:#fff; margin-top:2px;
+}
+.chat-bubble-bot {
+    background: rgba(91,140,255,.08);
+    border: 1px solid rgba(91,140,255,.15);
+    border-radius: 0 12px 12px 12px;
+    padding: .6rem .9rem; font-size:.88rem; line-height:1.5;
+    max-width: 88%; white-space: pre-wrap;
+}
+.chat-bubble-user {
+    background: linear-gradient(135deg,#5B8CFF,#a78bfa);
+    color:#fff; border-radius: 12px 0 12px 12px;
+    padding: .6rem .9rem; font-size:.88rem; line-height:1.5;
+    max-width: 88%; margin-left:auto; white-space: pre-wrap;
+}
+.chat-bubble-error {
+    background: rgba(239,68,68,.08);
+    border: 1px solid rgba(239,68,68,.2);
+    border-radius: 0 12px 12px 12px;
+    padding: .6rem .9rem; font-size:.88rem; color:#ef4444;
+    max-width: 88%;
+}
+.typing-indicator span {
+    display:inline-block; width:7px; height:7px;
+    background:#5B8CFF; border-radius:50%; margin:0 2px;
+    animation: bounce 1.2s infinite;
+}
+.typing-indicator span:nth-child(2) { animation-delay:.2s; }
+.typing-indicator span:nth-child(3) { animation-delay:.4s; }
+@keyframes bounce {
+    0%,60%,100%{ transform:translateY(0); }
+    30%        { transform:translateY(-6px); }
+}
+.sugerencia-btn:hover {
+    background: rgba(91,140,255,.1);
+    border-color: #5B8CFF !important;
+    color: #5B8CFF;
+}
+</style>
+
+<script>
+// ── Contexto del escaneo (se inyecta desde Jinja2) ──────────────────────────
+const CONTEXTO_ESCANEO = `Escaneo del proyecto: {{ proyecto.nombre }}
+URL: {{ proyecto.url or 'No especificada' }}
+Fecha: {{ coleccion.fecha_escaneo.strftime('%d/%m/%Y %H:%M') }}
+
+Resultados:
+{% for r in resultados %}- {{ r.vulnerabilidad }}: {{ r.estado }} (Riesgo: {{ r.nivel_riesgo or 'N/A' }})
+{% endfor %}`;
+
+// ── Historial de mensajes (solo roles user/assistant) ───────────────────────
+let historial = [];
+let enviando  = false;
+
+// ── Manejadores de eventos ──────────────────────────────────────────────────
+document.querySelectorAll('.sugerencia-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.getElementById('chat-input').value = btn.dataset.texto;
+        enviarMensaje();
+    });
+});
+
+function handleChatKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        enviarMensaje();
+    }
+}
+
+// ── Función principal de envío ───────────────────────────────────────────────
+async function enviarMensaje() {
+    if (enviando) return;
+    const input = document.getElementById('chat-input');
+    const texto = input.value.trim();
+    if (!texto) return;
+
+    // Mostrar mensaje del usuario
+    agregarMensaje('user', texto);
+    historial.push({ role: 'user', content: texto });
+    input.value = '';
+    enviando = true;
+    document.getElementById('chat-send-btn').disabled = true;
+
+    // Indicador de escritura
+    const typingId = agregarTyping();
+
+    try {
+        const res = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                messages: historial,
+                contexto: CONTEXTO_ESCANEO
+            })
+        });
+
+        const data = await res.json();
+        quitarTyping(typingId);
+
+        if (data.error) {
+            agregarMensaje('error', '❌ ' + data.error);
+        } else {
+            agregarMensaje('bot', data.reply);
+            historial.push({ role: 'assistant', content: data.reply });
+        }
+
+    } catch (err) {
+        quitarTyping(typingId);
+        agregarMensaje('error', '❌ Error de conexión: ' + err.message);
+    }
+
+    enviando = false;
+    document.getElementById('chat-send-btn').disabled = false;
+    input.focus();
+}
+
+// ── Helpers de UI ───────────────────────────────────────────────────────────
+function agregarMensaje(tipo, texto) {
+    const container = document.getElementById('chat-mensajes');
+    const wrapper   = document.createElement('div');
+
+    if (tipo === 'user') {
+        wrapper.innerHTML = `
+          <div class="d-flex justify-content-end">
+            <div class="chat-bubble-user">${escapeHtml(texto)}</div>
+          </div>`;
+    } else if (tipo === 'bot') {
+        wrapper.innerHTML = `
+          <div class="d-flex gap-2 align-items-start">
+            <div class="bot-avatar"><i class="fas fa-robot" style="font-size:.8rem;"></i></div>
+            <div class="chat-bubble-bot">${formatearRespuesta(texto)}</div>
+          </div>`;
+    } else {
+        wrapper.innerHTML = `
+          <div class="d-flex gap-2 align-items-start">
+            <div class="bot-avatar" style="background:#ef4444;">
+              <i class="fas fa-exclamation" style="font-size:.8rem;"></i>
+            </div>
+            <div class="chat-bubble-error">${escapeHtml(texto)}</div>
+          </div>`;
+    }
+
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+}
+
+function agregarTyping() {
+    const container = document.getElementById('chat-mensajes');
+    const wrapper   = document.createElement('div');
+    const id        = 'typing-' + Date.now();
+    wrapper.id      = id;
+    wrapper.innerHTML = `
+      <div class="d-flex gap-2 align-items-start">
+        <div class="bot-avatar"><i class="fas fa-robot" style="font-size:.8rem;"></i></div>
+        <div class="chat-bubble-bot typing-indicator">
+          <span></span><span></span><span></span>
+        </div>
+      </div>`;
+    container.appendChild(wrapper);
+    container.scrollTop = container.scrollHeight;
+    return id;
+}
+
+function quitarTyping(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+}
+
+// Convierte **negrita**, saltos de línea y listas básicas a HTML
+function formatearRespuesta(texto) {
+    return escapeHtml(texto)
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+}
+
+function escapeHtml(str) {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+</script>
 {% endblock %}
