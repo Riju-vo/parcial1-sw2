@@ -21,11 +21,115 @@ import ssl
 import re
 import socket
 from datetime import datetime
-from urllib.parse import urlparse, urljoin  
+from urllib.parse import urlparse, urljoin
+import urllib3
+# El escáner necesita conectarse a sitios con certs SSL inválidos para analizarlos
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# ── Cargar variables de entorno desde .env (desarrollo local) ──
+from dotenv import load_dotenv
+load_dotenv()
 
 #===============================================================================
 app = Flask(__name__)
-app.secret_key = 'vulnerability_scanner_secret_key'
+app.secret_key = os.environ.get('SECRET_KEY', 'vulnerability_scanner_secret_key')
+
+# ── Base de datos (PostgreSQL via SQLAlchemy) ──
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get(
+    'DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/vulnscanner'
+)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# ── Inicializar extensiones ──
+from extensions import db, login_manager
+db.init_app(app)
+login_manager.init_app(app)
+
+# ── User loader para Flask-Login ──
+from models import Usuario, Coleccion, Resultado, RISK_MAP
+@login_manager.user_loader
+def load_user(user_id):
+    return Usuario.query.get(int(user_id))
+
+# ── Registrar Blueprints ──
+from auth import auth_bp
+from projects import projects_bp
+app.register_blueprint(auth_bp)
+app.register_blueprint(projects_bp)
+
+
+# ── Chat con IA: endpoint stateless ──────────────────────────────────────────
+@app.route('/api/chat', methods=['POST'])
+def api_chat():
+    """
+    Recibe el historial de mensajes + el contexto del escaneo.
+    Llama a Azure OpenAI y devuelve la respuesta del asistente.
+
+    Body JSON esperado:
+        {
+            "messages": [{"role": "user", "content": "..."}, ...],
+            "contexto":  "texto con las vulnerabilidades del escaneo"
+        }
+    """
+    from flask import jsonify
+    data = request.get_json(force=True, silent=True) or {}
+    messages_in  = data.get('messages', [])
+    contexto     = data.get('contexto', '')
+
+    # Validar que hay al menos un mensaje de usuario
+    if not messages_in:
+        return jsonify({'error': 'No se enviaron mensajes.'}), 400
+
+    # Obtener configuración de Azure OpenAI
+    endpoint    = os.getenv('AZURE_OPENAI_ENDPOINT', '').rstrip('/')
+    api_key     = os.getenv('AZURE_OPENAI_API_KEY', '')
+    deployment  = os.getenv('AZURE_OPENAI_DEPLOYMENT', 'gpt-4.1-mini')
+    api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-05-01-preview')
+
+    if not endpoint or not api_key:
+        return jsonify({'error': 'Azure OpenAI no está configurado en el servidor.'}), 503
+
+    # System message con el contexto del escaneo inyectado
+    system_msg = {
+        'role': 'system',
+        'content': (
+            'Eres un asistente experto en ciberseguridad. '
+            'El usuario está revisando los resultados de un escaneo de vulnerabilidades. '
+            'Responde de forma clara, concreta y en español. '
+            'Si el usuario pregunta cómo corregir algo, da pasos específicos y ejemplos de código si aplica.\n\n'
+            f'Contexto del escaneo actual:\n{contexto}'
+        )
+    }
+
+    payload = {
+        'messages': [system_msg] + messages_in,
+        'temperature': 0.4,
+        'max_tokens': 1500,
+    }
+
+    url = (
+        f'{endpoint}/openai/deployments/{deployment}'
+        f'/chat/completions?api-version={api_version}'
+    )
+    headers = {'Content-Type': 'application/json', 'api-key': api_key}
+
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=45)
+        if resp.status_code != 200:
+            return jsonify({'error': f'Error Azure OpenAI {resp.status_code}: {resp.text[:300]}'}), 502
+
+        reply = (
+            resp.json()
+            .get('choices', [{}])[0]
+            .get('message', {})
+            .get('content', '')
+            .strip()
+        )
+        return jsonify({'reply': reply})
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 scan_results = {}  # aquí se guardarán los resultados completos por sesión
 
 
@@ -180,7 +284,7 @@ def check_broken_access_control(url):
     results_queue.put(f"Probando Broken Access Control (A01) en {url}...")
     try:
         # Obtener la página principal
-        res = requests.get(url, timeout=10)
+        res = requests.get(url, timeout=10, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
         links = [a.get('href') for a in soup.find_all('a', href=True)]
         
@@ -202,11 +306,11 @@ def check_broken_access_control(url):
             tampered_url = re.sub(rf'/{original_id}', f'/{int(original_id) + 1}', full_url)
             
             # Hacer requests
-            orig_res = requests.get(full_url, timeout=10)
+            orig_res = requests.get(full_url, timeout=10, verify=False)
             if orig_res.status_code != 200:
                 continue
             
-            tamp_res = requests.get(tampered_url, timeout=10)
+            tamp_res = requests.get(tampered_url, timeout=10, verify=False)
             if tamp_res.status_code == 200 and len(tamp_res.text.strip()) > 0:
                 vulnerable = True
                 break
@@ -347,6 +451,7 @@ def check_sql_injection(url):
         return list(qs.keys())
 
     session = requests.Session()
+    session.verify = False  # permite escanear sitios con certs SSL inválidos
 
     # Asegura esquema
     if not url.startswith(("http://", "https://")):
@@ -466,7 +571,7 @@ def check_xss(url):
     results_queue.put(f"Probando XSS en {url}...")
     payload = "<script>alert(1)</script>"
     try:
-        res = requests.get(f"{url}?q={payload}")
+        res = requests.get(f"{url}?q={payload}", verify=False)
         if payload in res.text:
             result = ("Vulnerable", "High")
         else:
@@ -482,7 +587,7 @@ def check_xss(url):
 def check_clickjacking(url):
     results_queue.put(f"Probando Clickjacking en {url}...")
     try:
-        headers = requests.get(url).headers
+        headers = requests.get(url, verify=False).headers
         if "X-Frame-Options" not in headers:
             result = ("Vulnerable", "Medium")
         else:
@@ -508,7 +613,7 @@ def check_security_headers(url):
         "Permissions-Policy"
     ]
     try:
-        res = requests.get(url)
+        res = requests.get(url, verify=False)
         missing = [h for h in expected_headers if h not in res.headers]
         if missing:
             result = (f"Missing: {', '.join(missing)}", "Medium")
@@ -527,7 +632,7 @@ def check_open_redirect(url):
     results_queue.put(f"Probando Open Redirect en {url}...")
     test_url = url + "/redirect?url=https://evil.com"
     try:
-        res = requests.get(test_url, allow_redirects=False)
+        res = requests.get(test_url, allow_redirects=False, verify=False)
         if "Location" in res.headers and "evil.com" in res.headers["Location"]:
             result = ("Vulnerable", "High")
         else:
@@ -544,7 +649,7 @@ def check_open_redirect(url):
 def check_csrf(url):
     results_queue.put(f"Probando CSRF en {url}...")
     try:
-        res = requests.get(url)
+        res = requests.get(url, verify=False)
         soup = BeautifulSoup(res.text, 'html.parser')
         forms = soup.find_all('form')
         if forms:
@@ -590,7 +695,7 @@ def check_xss_selenium(url):
             # Fallback para entornos cloud donde ChromeDriverManager podría fallar
             results_queue.put("Fallback: Usando método alternativo para XSS - simulación sin navegador real")
             # Simulamos la prueba sin navegador real para entornos donde Selenium no funciona
-            response = requests.get(url)
+            response = requests.get(url, verify=False)
             if "<script>alert" in response.text:
                 return ("Potencialmente Vulnerable (Simulado)", "Medium")
             return ("No se detectaron XSS simples (Simulado)", "Low")
@@ -635,7 +740,7 @@ def check_xss_selenium(url):
         results_queue.put(f"Error en la prueba con Selenium: {str(e)}")
         # Usar alternativa: comprobación básica si Selenium falla completamente
         try:
-            response = requests.get(url)
+            response = requests.get(url, verify=False)
             if "<script>alert" in response.text:
                 return ("Potencialmente Vulnerable (Alternativo)", "Medium")
             return ("Prueba alternativa: No se detectaron XSS simples", "Low")
@@ -646,7 +751,7 @@ def check_xss_selenium(url):
     return result
 
 # Función principal de escaneo
-def scan(url, session_id):
+def scan(url, session_id, flask_app=None, id_proyecto=None):
     results_queue.put("Iniciando escaneo de vulnerabilidades...")
     results = {}
     
@@ -655,7 +760,9 @@ def scan(url, session_id):
         url = 'http://' + url
     
     try:
-        requests.get(url, timeout=10)
+        # verify=False permite escanear sitios con certificados SSL inválidos/autofirmados
+        # (eso mismo se reportará como vulnerabilidad en check_cryptographic_failures)
+        requests.get(url, timeout=10, verify=False)
     except requests.exceptions.RequestException as e:
         results_queue.put(f"Error: No se puede conectar a {url}: {str(e)}")
         return None
@@ -705,6 +812,30 @@ def scan(url, session_id):
         "report_pdf": pdf_path,
         "correcciones_pdf": corr_pdf_path
     }
+
+    # ── Persistir en BD si el usuario está logueado y hay un proyecto asociado ──
+    if flask_app and id_proyecto:
+        try:
+            with flask_app.app_context():
+                from extensions import db
+                coleccion = Coleccion(id_proyecto=id_proyecto)
+                db.session.add(coleccion)
+                db.session.flush()  # obtener id_coleccion antes de commit
+
+                for vuln_name, (status, risk_en) in results.items():
+                    nivel = RISK_MAP.get(risk_en, 'Bajo')
+                    resultado = Resultado(
+                        vulnerabilidad=vuln_name,
+                        estado=status,
+                        nivel_riesgo=nivel,
+                        id_coleccion=coleccion.id_coleccion
+                    )
+                    db.session.add(resultado)
+
+                db.session.commit()
+                results_queue.put(f"✔ Resultados guardados en la base de datos (colección #{coleccion.id_coleccion}).")
+        except Exception as e:
+            logging.exception("Error al guardar resultados en BD: %s", e)
     
     # Señalar que se completó el escaneo
     results_queue.put("SCAN_COMPLETE")
@@ -721,6 +852,7 @@ def index():
 @app.route('/scan', methods=['POST'])
 def start_scan():
     url = request.form.get('url')
+    id_proyecto = request.form.get('id_proyecto', type=int)  # None si no viene
     if not url:
         flash('Por favor, ingrese una URL válida', 'danger')
         return redirect(url_for('index'))
@@ -729,7 +861,12 @@ def start_scan():
     session_id = str(int(time.time()))
     
     # Iniciar el escaneo en un hilo separado
-    thread = threading.Thread(target=scan, args=(url, session_id))
+    # Pasamos flask_app e id_proyecto para persistir en BD si hay proyecto asociado
+    thread = threading.Thread(
+        target=scan,
+        args=(url, session_id),
+        kwargs={'flask_app': app, 'id_proyecto': id_proyecto}
+    )
     thread.daemon = True
     thread.start()
     
@@ -788,7 +925,10 @@ def download_correcciones(session_id):
 
 @app.route('/index')
 def home():
-    return render_template('index.html')
+    # Acepta ?url=... y ?id_proyecto=... para pre-llenar desde la vista de proyecto
+    prefill_url = request.args.get('url', '')
+    id_proyecto  = request.args.get('id_proyecto', '')
+    return render_template('index.html', prefill_url=prefill_url, id_proyecto=id_proyecto)
 
 
 @app.route('/manual_vul')
@@ -798,7 +938,10 @@ def manual():
 
 
 
+
+
 if __name__ == '__main__':
-    # Obtener el puerto desde la variable de entorno o usar 5000 como predeterminado
+    with app.app_context():
+        db.create_all()  # Crea las tablas si no existen (equivalente rápido a migrate en dev)
     port = int(os.environ.get("PORT", 5000))
     app.run(host='0.0.0.0', port=port)

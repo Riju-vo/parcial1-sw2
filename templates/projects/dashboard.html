@@ -1,0 +1,268 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ proyecto.nombre }} · VulnScanner{% endblock %}
+{% block hero_title %}Dashboard{% endblock %}
+{% block hero_subtitle %}{{ proyecto.nombre }} — Evolución de vulnerabilidades en el tiempo{% endblock %}
+
+{% block scripts_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<section class="my-4">
+
+    <!-- Navegación + acciones -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-4">
+        <a href="{{ url_for('projects.detalle', id_proyecto=proyecto.id_proyecto) }}"
+            class="btn btn-outline-secondary rounded-pill btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> Historial
+        </a>
+        {% if proyecto.url %}
+        <a href="{{ url_for('home', url=proyecto.url, id_proyecto=proyecto.id_proyecto) }}"
+            class="btn btn-gradient rounded-pill btn-sm">
+            <i class="fas fa-play me-2"></i>Escanear ahora
+        </a>
+        {% endif %}
+    </div>
+
+    {% if not colecciones %}
+    <!-- Sin datos -->
+    <div class="aurora-card p-5 text-center">
+        <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+        <h4 class="fw-bold">Sin datos suficientes</h4>
+        <p class="text-muted mb-4">Realiza al menos un escaneo para ver el dashboard.</p>
+        {% if proyecto.url %}
+        <a href="{{ url_for('home', url=proyecto.url, id_proyecto=proyecto.id_proyecto) }}"
+            class="btn btn-gradient rounded-pill btn-lg">
+            <i class="fas fa-play me-2"></i>Primer escaneo
+        </a>
+        {% endif %}
+    </div>
+
+    {% else %}
+
+    <!-- KPI Cards -->
+    <div class="row g-3 mb-4">
+        {% set last = colecciones|last %}
+        {% set lc = last.conteo_por_riesgo %}
+        {% for label, val, color, icon in [
+        ('Escaneos totales', colecciones|length, '#5B8CFF', 'fa-radar'),
+        ('Crítico (último)', lc['Crítico'], '#ef4444', 'fa-skull-crossbones'),
+        ('Alto (último)', lc['Alto'], '#f97316', 'fa-exclamation-triangle'),
+        ('Medio (último)', lc['Medio'], '#eab308', 'fa-exclamation-circle')
+        ] %}
+        <div class="col-6 col-md-3" data-animate data-animate-delay="{{ loop.index0 * 60 }}">
+            <div class="aurora-card p-3 h-100" style="border-top:3px solid {{ color }};">
+                <div class="d-flex align-items-center gap-2 mb-2">
+                    <i class="fas {{ icon }}" style="color:{{ color }};"></i>
+                    <span class="text-muted small">{{ label }}</span>
+                </div>
+                <div class="display-6 fw-bold" style="color:{{ color }};">{{ val }}</div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Gráficas: Donut + Barras apiladas -->
+    <div class="row g-4 mb-4">
+
+        <!-- Donut: distribución total -->
+        <div class="col-md-4" data-animate data-animate-delay="0">
+            <div class="aurora-card p-4 h-100">
+                <h6 class="fw-bold mb-3">
+                    <i class="fas fa-chart-pie me-2" style="color:#5B8CFF;"></i>
+                    Distribución total
+                </h6>
+                <div style="position:relative;height:220px;">
+                    <canvas id="donutChart"></canvas>
+                </div>
+                <!-- Leyenda personalizada -->
+                <div class="mt-3 d-flex flex-wrap gap-3 justify-content-center">
+                    {% for nivel, color in
+                    [('Crítico','#ef4444'),('Alto','#f97316'),('Medio','#eab308'),('Bajo','#22c55e')] %}
+                    <span class="d-flex align-items-center gap-1 small">
+                        <span
+                            style="width:10px;height:10px;border-radius:50%;background:{{ color }};display:inline-block;"></span>
+                        {{ nivel }} <strong>{{ totales[nivel] }}</strong>
+                    </span>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Barras apiladas: evolución temporal -->
+        <div class="col-md-8" data-animate data-animate-delay="80">
+            <div class="aurora-card p-4 h-100">
+                <h6 class="fw-bold mb-3">
+                    <i class="fas fa-chart-bar me-2" style="color:#5B8CFF;"></i>
+                    Evolución por escaneo
+                </h6>
+                <div style="position:relative;height:220px;">
+                    <canvas id="barChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Tabla: vulnerabilidades con tendencia -->
+    <div class="aurora-card p-0 overflow-hidden" data-animate data-animate-delay="160">
+        <div class="px-4 py-3" style="border-bottom:1px solid rgba(0,0,0,.07);">
+            <h6 class="fw-bold mb-0">
+                <i class="fas fa-list-check me-2" style="color:#5B8CFF;"></i>
+                Detalle por vulnerabilidad
+            </h6>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead style="background:rgba(91,140,255,.06);">
+                    <tr>
+                        <th class="ps-4">Vulnerabilidad</th>
+                        <th class="text-center">Último nivel</th>
+                        <th class="text-center">Último estado</th>
+                        <th class="text-center">Escaneos</th>
+                        <th class="text-center">Tendencia</th>
+                        <th class="pe-4">Prevalencia</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for vuln in tabla_vulnerabilidades %}
+                    {% set color_map = {'Crítico':'#ef4444','Alto':'#f97316','Medio':'#eab308','Bajo':'#22c55e'} %}
+                    {% set rc = color_map.get(vuln.nivel_actual, '#888') %}
+                    <tr>
+                        <td class="ps-4 fw-semibold">{{ vuln.nombre }}</td>
+                        <td class="text-center">
+                            <span class="badge rounded-pill px-3" style="background:{{ rc }}22;color:{{ rc }};">
+                                {{ vuln.nivel_actual or '—' }}
+                            </span>
+                        </td>
+                        <td class="text-center">
+                            {% if 'Vulnerable' in vuln.estado or 'Missing' in vuln.estado or 'Issues' in vuln.estado %}
+                            <span class="badge" style="background:#ef444422;color:#ef4444;">
+                                <i class="fas fa-times-circle me-1"></i>{{ vuln.estado[:20] }}
+                            </span>
+                            {% elif 'Safe' in vuln.estado or 'Secure' in vuln.estado or 'Present' in vuln.estado %}
+                            <span class="badge" style="background:#22c55e22;color:#16a34a;">
+                                <i class="fas fa-check-circle me-1"></i>{{ vuln.estado[:20] }}
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary-subtle text-secondary">{{ vuln.estado[:20] }}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center text-muted small">{{ vuln.ocurrencias }}/{{ colecciones|length }}</td>
+                        <td class="text-center">
+                            {% if vuln.tendencia == 'mejora' %}
+                            <span style="color:#22c55e;" title="Mejoró">
+                                <i class="fas fa-arrow-trend-down me-1"></i>Mejora
+                            </span>
+                            {% elif vuln.tendencia == 'empeora' %}
+                            <span style="color:#ef4444;" title="Empeoró">
+                                <i class="fas fa-arrow-trend-up me-1"></i>Empeora
+                            </span>
+                            {% elif vuln.tendencia == 'estable' %}
+                            <span class="text-muted">
+                                <i class="fas fa-minus me-1"></i>Estable
+                            </span>
+                            {% else %}
+                            <span class="text-muted small">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="pe-4" style="min-width:120px;">
+                            {% set pct = ((vuln.ocurrencias / colecciones|length) * 100) | int %}
+                            <div class="d-flex align-items-center gap-2">
+                                <div
+                                    style="flex:1;height:6px;background:rgba(0,0,0,.08);border-radius:3px;overflow:hidden;">
+                                    <div style="width:{{ pct }}%;height:100%;background:{{ rc }};border-radius:3px;
+                               transition:width .6s ease;"></div>
+                                </div>
+                                <span class="text-muted small" style="white-space:nowrap;">{{ pct }}%</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% endif %}
+</section>
+{% endblock %}
+
+{% block scripts %}
+{% if colecciones %}
+<script>
+    const LABELS = {{ fechas_etiquetas | tojson }};
+    const CRITICO = {{ serie_critico   | tojson }};
+    const ALTO = {{ serie_alto      | tojson }};
+    const MEDIO = {{ serie_medio     | tojson }};
+    const BAJO = {{ serie_bajo      | tojson }};
+    const TOTALES = {{ [totales['Crítico'], totales['Alto'], totales['Medio'], totales['Bajo']] | tojson }};
+
+    /* ── Donut chart ── */
+    new Chart(document.getElementById('donutChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Crítico', 'Alto', 'Medio', 'Bajo'],
+            datasets: [{
+                data: TOTALES,
+                backgroundColor: ['#ef4444', '#f97316', '#eab308', '#22c55e'],
+                borderWidth: 2,
+                borderColor: 'rgba(255,255,255,.15)',
+                hoverOffset: 6
+            }]
+        },
+        options: {
+            cutout: '68%',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${ctx.label}: ${ctx.parsed} (${Math.round(ctx.parsed / TOTALES.reduce((a, b) => a + b, 0) * 100)}%)`
+                    }
+                }
+            }
+        }
+    });
+
+    /* ── Stacked bar chart ── */
+    new Chart(document.getElementById('barChart'), {
+        type: 'bar',
+        data: {
+            labels: LABELS,
+            datasets: [
+                { label: 'Crítico', data: CRITICO, backgroundColor: '#ef4444cc', borderRadius: 4 },
+                { label: 'Alto', data: ALTO, backgroundColor: '#f97316cc', borderRadius: 4 },
+                { label: 'Medio', data: MEDIO, backgroundColor: '#eab308cc', borderRadius: 4 },
+                { label: 'Bajo', data: BAJO, backgroundColor: '#22c55ecc', borderRadius: 4 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: { boxWidth: 10, padding: 14, font: { size: 11 } }
+                },
+                tooltip: { mode: 'index', intersect: false }
+            },
+            scales: {
+                x: {
+                    stacked: true,
+                    grid: { display: false },
+                    ticks: { font: { size: 10 } }
+                },
+                y: {
+                    stacked: true,
+                    beginAtZero: true,
+                    ticks: { precision: 0, font: { size: 10 } },
+                    grid: { color: 'rgba(0,0,0,.05)' }
+                }
+            }
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}
